@@ -74,8 +74,6 @@
       min-width: 260px;
       padding: 8px;
       font-size: 14px;
-      resize: vertical;
-      font-family: inherit;
     }
     button {
       padding: 6px 10px;
@@ -195,7 +193,7 @@
   <div id="tabs"></div>
 
   <div id="input-area">
-    <textarea id="tweetUrl" placeholder="ツイートのURLをペースト（複数URLは改行で区切る / Ctrl+Enterで追加）" rows="3"></textarea>
+    <input id="tweetUrl" type="text" placeholder="ツイートのURLをペースト（複数URLはスペースで区切る）">
     <button id="addBtn">追加</button>
     <button id="exportBtn">JSONエクスポート</button>
     <button id="importBtn">JSONインポート</button>
@@ -503,8 +501,8 @@ function addItem() {
   const text = inp.value.trim();
   if (!text) return;
 
-  // 改行で分割して複数URLを処理
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  // スペースで分割して複数URLを処理
+  const lines = text.split(/\s+/).filter(l => l);
   if (lines.length === 0) return;
 
   const arr = getCurrentItems();
@@ -603,10 +601,7 @@ function handleTabShortcut(e) {
 window.onload = () => {
   document.getElementById("addBtn").onclick = addItem;
   document.getElementById("tweetUrl").addEventListener("keydown", e => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      addItem();
-    }
+    if (e.key === "Enter") addItem();
   });
   document.getElementById("exportBtn").onclick =
     () => exportJson();
