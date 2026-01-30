@@ -193,7 +193,7 @@
   <div id="tabs"></div>
 
   <div id="input-area">
-    <input id="tweetUrl" type="text" placeholder="ツイートのURLをペースト（複数URLはスペースで区切る ※全角可）">
+    <input id="tweetUrl" type="text" placeholder="ツイートのURLをペースト（複数URL可）">
     <button id="addBtn">追加</button>
     <button id="exportBtn">JSONエクスポート</button>
     <button id="importBtn">JSONインポート</button>
@@ -501,8 +501,11 @@ function addItem() {
   const text = inp.value.trim();
   if (!text) return;
 
-  // スペース（半角・全角）で分割して複数URLを処理
-  const lines = text.split(/[\s　]+/).filter(l => l);
+  // 複数URLを分割（https://の前で分割し、各URLを抽出）
+  const lines = text
+    .split(/(?=https?:\/\/)/)
+    .map(s => s.trim())
+    .filter(l => l);
   if (lines.length === 0) return;
 
   const arr = getCurrentItems();
