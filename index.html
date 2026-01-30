@@ -506,6 +506,7 @@ function addItem() {
     .split(/(?=https?:\/\/)/)
     .map(s => s.trim())
     .filter(l => l);
+  alert("分割数: " + lines.length + "\n" + lines.join("\n---\n"));
   if (lines.length === 0) return;
 
   const arr = getCurrentItems();
