@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>X ブックマーク URL 収集ツール</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    h1 { font-size: 22px; }
+    h2 { font-size: 16px; margin-top: 24px; }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .step {
+      margin: 12px 0;
+      padding: 8px 12px;
+      background: #f9f9f9;
+      border-left: 3px solid #1da1f2;
+      font-size: 14px;
+    }
+    .step strong { color: #1da1f2; }
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      cursor: pointer;
+      position: relative;
+    }
+    pre:hover::after {
+      content: "クリックでコピー";
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      background: #1da1f2;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .copied::after {
+      content: "コピーしました!" !important;
+      background: #28a745 !important;
+    }
+    .note {
+      font-size: 13px;
+      color: #666;
+      margin-top: 8px;
+    }
+    button {
+      background: #1da1f2;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #0c8de4; }
+    #scriptArea {
+      width: 100%;
+      height: 200px;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 8px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <h1>X ブックマーク URL 収集ツール</h1>
+  <p>Xのブックマークに保存したツイートのURLを上から最大200件収集し、CSVファイルとしてダウンロードします。</p>
+
+  <div class="card">
+    <h2>使い方</h2>
+
+    <div class="step">
+      <strong>Step 1:</strong> ブラウザで <a href="https://x.com/i/bookmarks" target="_blank">https://x.com/i/bookmarks</a> を開く（ログイン済みであること）
+    </div>
+
+    <div class="step">
+      <strong>Step 2:</strong> キーボードの <kbd>F12</kbd> を押して開発者ツールを開き、<strong>Console</strong> タブをクリック
+    </div>
+
+    <div class="step">
+      <strong>Step 3:</strong> 下のスクリプトをコピーして、Console に貼り付けて <kbd>Enter</kbd> を押す
+    </div>
+
+    <div class="step">
+      <strong>Step 4:</strong> 自動スクロールが始まります。完了すると <code>x_bookmark_url.csv</code> が自動ダウンロードされます
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>収集スクリプト</h2>
+    <p class="note">下のコードブロックをクリックするとクリップボードにコピーされます。</p>
+    <pre id="scriptBlock"></pre>
+    <br>
+    <button id="copyBtn">スクリプトをコピー</button>
+  </div>
+
+  <div class="card">
+    <h2>注意事項</h2>
+    <ul>
+      <li>スクリプト実行中はブックマークページのタブを閉じたり切り替えたりしないでください</li>
+      <li>ブックマークの数が200件未満の場合は、ある分だけ収集されます</li>
+      <li>収集にはブックマーク数に応じて1〜5分程度かかります</li>
+      <li>Chromeのコンソールで「貼り付けを許可」の警告が出た場合は、<code>allow pasting</code> と入力してからスクリプトを貼り付けてください</li>
+      <li>ダウンロードされたCSVファイルはExcelやテキストエディタで開けます</li>
+    </ul>
+  </div>
+
+<script>
+// collect_bookmarks.js の内容を埋め込む
+const SCRIPT_CONTENT = `(async function collectBookmarks() {
+  "use strict";
+
+  const MAX_URLS = 200;
+  const SCROLL_DELAY = 2000;
+  const MAX_RETRIES = 5;
+
+  const collectedUrls = new Set();
+  let noNewCount = 0;
+
+  function extractTweetUrls() {
+    const links = document.querySelectorAll('a[href*="/status/"]');
+    let newFound = 0;
+
+    links.forEach(function (a) {
+      const href = a.href;
+      const match = href.match(
+        /https:\\/\\/(x\\.com|twitter\\.com)\\/[^/]+\\/status\\/(\\d+)/
+      );
+      if (match) {
+        const normalizedUrl = "https://x.com/" + href.split("/")[3] + "/status/" + match[2];
+        if (!collectedUrls.has(normalizedUrl)) {
+          collectedUrls.add(normalizedUrl);
+          newFound++;
+        }
+      }
+    });
+
+    return newFound;
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  function downloadCsv(urls) {
+    var csvContent = "url\\n";
+    urls.forEach(function (url) {
+      csvContent += url + "\\n";
+    });
+
+    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "x_bookmark_url.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  console.log("=== X ブックマーク URL 収集開始 ===");
+  console.log("目標: " + MAX_URLS + " 件");
+
+  extractTweetUrls();
+  console.log("初回収集: " + collectedUrls.size + " 件");
+
+  while (collectedUrls.size < MAX_URLS && noNewCount < MAX_RETRIES) {
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(SCROLL_DELAY);
+
+    var newFound = extractTweetUrls();
+
+    if (newFound > 0) {
+      noNewCount = 0;
+      console.log("収集中... " + collectedUrls.size + " / " + MAX_URLS + " 件");
+    } else {
+      noNewCount++;
+      console.log(
+        "新しいツイートが見つかりません (" + noNewCount + "/" + MAX_RETRIES + ")"
+      );
+    }
+  }
+
+  var urlArray = Array.from(collectedUrls).slice(0, MAX_URLS);
+
+  console.log("=== 収集完了 ===");
+  console.log("合計: " + urlArray.length + " 件のURLを収集しました");
+
+  downloadCsv(urlArray);
+  console.log("x_bookmark_url.csv をダウンロードしました");
+
+  urlArray.forEach(function (url, i) {
+    console.log((i + 1) + ": " + url);
+  });
+
+  return urlArray;
+})();`;
+
+document.getElementById("scriptBlock").textContent = SCRIPT_CONTENT;
+
+// コピー機能
+function copyScript() {
+  navigator.clipboard.writeText(SCRIPT_CONTENT).then(function () {
+    var btn = document.getElementById("copyBtn");
+    btn.textContent = "コピーしました!";
+    setTimeout(function () {
+      btn.textContent = "スクリプトをコピー";
+    }, 2000);
+  });
+}
+
+document.getElementById("copyBtn").onclick = copyScript;
+
+document.getElementById("scriptBlock").onclick = function () {
+  navigator.clipboard.writeText(SCRIPT_CONTENT).then(function () {
+    var el = document.getElementById("scriptBlock");
+    el.classList.add("copied");
+    setTimeout(function () {
+      el.classList.remove("copied");
+    }, 2000);
+  });
+};
+</script>
+</body>
+</html>
