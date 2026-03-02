@@ -1,0 +1,4 @@
+.env
+x_bookmark_url.csv
+x_bookmark_classified.csv
+__pycache__/
