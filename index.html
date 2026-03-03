@@ -186,30 +186,16 @@
       color: #008000;
     }
 
-    /* ブックマークレット */
-    #bookmarklet-section {
-      display: none;
-      max-width: 960px;
-      margin: 0 auto 12px;
-      background: #fffde7;
-      border: 1px solid #f0e68c;
-      border-radius: 8px;
-      padding: 12px;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-    .bookmarklet-link {
-      display: inline-block;
+    .btn-bookmark {
       background: #1da1f2;
-      color: #fff !important;
-      padding: 8px 16px;
-      border-radius: 4px;
-      text-decoration: none;
-      font-weight: bold;
-      cursor: grab;
-      user-select: none;
+      color: #fff;
+      border: none;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px;
     }
-    .bookmarklet-link:hover {
+    .btn-bookmark:hover {
       background: #0d8bd9;
     }
   </style>
@@ -225,21 +211,6 @@
     <button id="exportBtn">JSONエクスポート</button>
     <button id="importBtn">JSONインポート</button>
     <input type="file" id="importFile" accept="application/json" style="display:none">
-    <button id="openAllBtn">全件Xで開く</button>
-    <button id="copyAllBtn">全件URLコピー</button>
-    <button id="bookmarkletToggle">一括ブックマーク</button>
-  </div>
-
-  <div id="bookmarklet-section">
-    <p><strong>Xブックマークに一括追加（実験的）：</strong><br>
-    下のボタンをブックマークバーにドラッグし、<strong>x.comを開いた状態で</strong>クリックしてください。<br>
-    現在のタブの全ツイートをXのブックマークに一括追加します。</p>
-    <a id="bookmarkletLink" class="bookmarklet-link" href="#">Xブクマ一括追加</a>
-    <p style="margin-top:8px;font-size:11px;color:#888">
-      ※ x.comにログイン済みの状態で、x.comのページ上で実行してください<br>
-      ※ ボタンは内容が変わるたびに再ドラッグが必要です（「一括ブックマーク」を再クリックで更新）<br>
-      ※ X内部APIを利用するため、X側の仕様変更で動作しなくなる場合があります
-    </p>
   </div>
 
   <div id="count"></div>
@@ -387,6 +358,16 @@ function createTweetItem(item, index) {
   head.className = "tweet-header";
   head.innerHTML = `<span>#${index + 1}</span>`;
 
+  const headBtns = document.createElement("span");
+  headBtns.style.display = "flex";
+  headBtns.style.gap = "4px";
+
+  const bkmk = document.createElement("button");
+  bkmk.className = "btn-bookmark";
+  bkmk.textContent = "Xでブックマーク";
+  bkmk.onclick = () => { window.open(item.url, "_blank"); };
+  headBtns.appendChild(bkmk);
+
   const del = document.createElement("button");
   del.className = "btn-delete";
   del.textContent = "削除";
@@ -396,7 +377,8 @@ function createTweetItem(item, index) {
     setCurrentItems(arr);
     renderList();
   };
-  head.appendChild(del);
+  headBtns.appendChild(del);
+  head.appendChild(headBtns);
 
   const urlText = document.createElement("div");
   urlText.className = "tweet-url";
@@ -628,97 +610,6 @@ function handleImportFile(e) {
   e.target.value = "";
 }
 
-/* ===== 全件Xで開く / URLコピー ===== */
-function openAllInX() {
-  var items = getCurrentItems();
-  if (items.length === 0) { alert("ツイートがありません"); return; }
-
-  var BATCH = 5;
-  var total = items.length;
-  var opened = 0;
-
-  function openBatch() {
-    var end = Math.min(opened + BATCH, total);
-    for (var i = opened; i < end; i++) {
-      window.open(items[i].url, "_blank");
-    }
-    opened = end;
-    if (opened < total) {
-      if (confirm(opened + "/" + total + "件を開きました。続けて開きますか？")) {
-        openBatch();
-      }
-    }
-  }
-
-  if (total <= BATCH) {
-    openBatch();
-  } else {
-    if (confirm(total + "件を" + BATCH + "件ずつ新タブで開きます。\nポップアップブロックを許可してください。")) {
-      openBatch();
-    }
-  }
-}
-
-function copyAllUrls() {
-  var items = getCurrentItems();
-  if (items.length === 0) { alert("ツイートがありません"); return; }
-  var text = items.map(function(x){ return x.url; }).join("\n");
-  navigator.clipboard.writeText(text).then(function() {
-    alert(items.length + "件のURLをコピーしました");
-  }, function() {
-    // フォールバック: テキストエリアからコピー
-    var ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    alert(items.length + "件のURLをコピーしました");
-  });
-}
-
-/* ===== Xブックマーク一括追加ブックマークレット ===== */
-function getBookmarkletCode() {
-  var items = getCurrentItems();
-  var ids = [];
-  for (var i = 0; i < items.length; i++) {
-    var tid = extractTweetId(items[i].url);
-    if (tid) ids.push(tid);
-  }
-  if (ids.length === 0) return "#";
-
-  // x.com上で実行: 内部GraphQL APIを使ってブックマーク追加
-  var code = [
-    "(function(){",
-    "if(!/^https:\\/\\/(x|twitter)\\.com/.test(location.href)){alert('x.comで実行してください');return;}",
-    "var ids=" + JSON.stringify(ids) + ";",
-    "var ct0=document.cookie.match(/ct0=([^;]+)/);",
-    "if(!ct0){alert('Xにログインしてください');return;}",
-    "var csrf=ct0[1];",
-    "var ok=0,ng=0,i=0;",
-    "function next(){",
-    "if(i>=ids.length){alert('完了: '+ok+'件追加 / '+ng+'件失敗');return;}",
-    "fetch('/i/api/graphql/aoDbu3RHznuiSkQ9aNM67Q/CreateBookmark',{",
-    "method:'POST',",
-    "headers:{",
-    "'authorization':'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',",
-    "'x-csrf-token':csrf,",
-    "'content-type':'application/json',",
-    "'x-twitter-active-user':'yes',",
-    "'x-twitter-auth-type':'OAuth2Session'",
-    "},",
-    "credentials:'include',",
-    "body:JSON.stringify({variables:{tweet_id:ids[i]},queryId:'aoDbu3RHznuiSkQ9aNM67Q'})",
-    "}).then(function(r){if(r.ok)ok++;else ng++;}).catch(function(){ng++;}).then(function(){",
-    "i++;setTimeout(next,500);",
-    "});",
-    "}",
-    "if(confirm(ids.length+'件のツイートをXのブックマークに追加します')){next();}",
-    "})()"
-  ].join("");
-  return "javascript:" + encodeURI(code);
-}
-
 /* ===== タブ切り替えショートカット ===== */
 /* 1〜9 → タブ1〜9, 0 → タブ10 */
 function handleTabShortcut(e) {
@@ -750,20 +641,6 @@ window.onload = () => {
   document.getElementById("importBtn").onclick =
     () => document.getElementById("importFile").click();
   document.getElementById("importFile").addEventListener("change", handleImportFile);
-
-  // 全件Xで開く / URLコピー
-  document.getElementById("openAllBtn").onclick = openAllInX;
-  document.getElementById("copyAllBtn").onclick = copyAllUrls;
-
-  // 一括ブックマークレット
-  document.getElementById("bookmarkletToggle").onclick = function() {
-    var sec = document.getElementById("bookmarklet-section");
-    var visible = sec.style.display !== "block";
-    sec.style.display = visible ? "block" : "none";
-    if (visible) {
-      document.getElementById("bookmarkletLink").href = getBookmarkletCode();
-    }
-  };
 
   document.addEventListener("keydown", handleTabShortcut);
 
