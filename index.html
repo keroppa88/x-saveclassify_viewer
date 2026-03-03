@@ -185,6 +185,33 @@
       font-size: 11px;
       color: #008000;
     }
+
+    /* ブックマークレット */
+    #bookmarklet-section {
+      display: none;
+      max-width: 960px;
+      margin: 0 auto 12px;
+      background: #fffde7;
+      border: 1px solid #f0e68c;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .bookmarklet-link {
+      display: inline-block;
+      background: #1da1f2;
+      color: #fff !important;
+      padding: 8px 16px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: bold;
+      cursor: grab;
+      user-select: none;
+    }
+    .bookmarklet-link:hover {
+      background: #0d8bd9;
+    }
   </style>
 </head>
 <body>
@@ -198,6 +225,18 @@
     <button id="exportBtn">JSONエクスポート</button>
     <button id="importBtn">JSONインポート</button>
     <input type="file" id="importFile" accept="application/json" style="display:none">
+    <button id="bookmarkletToggle">ブックマークレット</button>
+  </div>
+
+  <div id="bookmarklet-section">
+    <p><strong>使い方：</strong>下のボタンをブラウザのブックマークバーにドラッグ＆ドロップしてください。<br>
+    X（Twitter）のページでクリックすると、表示中のツイートURLをこのアプリに一括追加します。</p>
+    <a id="bookmarkletLink" class="bookmarklet-link" href="#">Xブクマ取得</a>
+    <p style="margin-top:8px;font-size:11px;color:#888">
+      ※ ブックマークバーが非表示の場合は Ctrl+Shift+B で表示できます<br>
+      ※ ページ上に表示されている全ツイートのリンクを取得します（タイムライン・ブックマークページ対応）<br>
+      ※ X上でスクロールして読み込んでからクリックすると、より多くのツイートを取得できます
+    </p>
   </div>
 
   <div id="count"></div>
@@ -580,6 +619,70 @@ function handleImportFile(e) {
   e.target.value = "";
 }
 
+/* ===== ブックマークレット ===== */
+function getBookmarkletCode() {
+  var base = location.href.split('?')[0].split('#')[0];
+  // ブックマークレット: X/Twitterページ上の全ツイートURLを収集してアプリに送る
+  var code = [
+    "(function(){",
+    "var u=[],s={};",
+    "document.querySelectorAll('a[href]').forEach(function(a){",
+    "var m=a.href.match(/https:\\/\\/(x|twitter)\\.com\\/(\\w+)\\/status\\/(\\d+)/);",
+    "if(m){var k='https://x.com/'+m[2]+'/status/'+m[3];if(!s[k]){s[k]=1;u.push(k);}}",
+    "});",
+    "if(!u.length){",
+    "var lm=location.href.match(/https:\\/\\/(x|twitter)\\.com\\/(\\w+)\\/status\\/(\\d+)/);",
+    "if(lm)u.push('https://x.com/'+lm[2]+'/status/'+lm[3]);",
+    "}",
+    "if(!u.length){alert('ツイートURLが見つかりません');return;}",
+    "if(confirm(u.length+'件のツイートURLを取得しました。\\nアプリに追加しますか？')){",
+    "window.open('" + base + "?add='+encodeURIComponent(u.join('\\n')),'_blank');",
+    "}",
+    "})()"
+  ].join("");
+  return "javascript:" + encodeURI(code);
+}
+
+function handleUrlParams() {
+  var params = new URLSearchParams(location.search);
+  var addParam = params.get('add');
+  if (!addParam) return;
+
+  // URLをクリーンに
+  history.replaceState(null, "", location.pathname + location.hash);
+
+  var urls = addParam.split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+  if (urls.length === 0) return;
+
+  var arr = getCurrentItems();
+  var added = 0, skipped = 0;
+
+  for (var i = 0; i < urls.length; i++) {
+    var url = urls[i];
+    if (!url.startsWith("http")) url = "https://" + url;
+    if (arr.some(function(x){ return x.url === url; })) {
+      skipped++;
+    } else {
+      arr.unshift({ url: url, memo: "", height: 600 });
+      added++;
+    }
+  }
+
+  if (added > 0) {
+    setCurrentItems(arr);
+  }
+
+  var msg = "";
+  if (added > 0 && skipped > 0) {
+    msg = added + "件追加しました（" + skipped + "件は登録済みのためスキップ）";
+  } else if (added > 0) {
+    msg = added + "件追加しました";
+  } else {
+    msg = skipped + "件すべて登録済みです";
+  }
+  setTimeout(function(){ alert(msg); }, 100);
+}
+
 /* ===== タブ切り替えショートカット ===== */
 /* 1〜9 → タブ1〜9, 0 → タブ10 */
 function handleTabShortcut(e) {
@@ -612,7 +715,20 @@ window.onload = () => {
     () => document.getElementById("importFile").click();
   document.getElementById("importFile").addEventListener("change", handleImportFile);
 
+  // ブックマークレット
+  document.getElementById("bookmarkletToggle").onclick = function() {
+    var sec = document.getElementById("bookmarklet-section");
+    var visible = sec.style.display !== "block";
+    sec.style.display = visible ? "block" : "none";
+    if (visible) {
+      document.getElementById("bookmarkletLink").href = getBookmarkletCode();
+    }
+  };
+
   document.addEventListener("keydown", handleTabShortcut);
+
+  // URLパラメータからの追加（ブックマークレット経由）
+  handleUrlParams();
 
   renderTabs();
   renderList();
