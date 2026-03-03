@@ -152,6 +152,42 @@
       background: #ffdddd;
     }
 
+    .tweet-data {
+      font-size: 12px;
+      margin-top: 4px;
+      padding: 6px 8px;
+      background: #f0f7ff;
+      border-radius: 4px;
+      border: 1px solid #d0e0f0;
+    }
+    .tweet-data-user {
+      font-size: 11px;
+      color: #555;
+      margin-bottom: 2px;
+      font-weight: bold;
+    }
+    .tweet-data-text {
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #333;
+    }
+    .tweet-data-date {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .btn-fetch {
+      background: #e8f0fe;
+      border: 1px solid #c0d0e0;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .btn-fetch:hover {
+      background: #d0e0f0;
+    }
+
     .memo-label-row {
       display: flex;
       justify-content: space-between;
@@ -198,6 +234,9 @@
     <button id="exportBtn">JSONエクスポート</button>
     <button id="importBtn">JSONインポート</button>
     <input type="file" id="importFile" accept="application/json" style="display:none">
+    <button id="fetchAllBtn">一括テキスト取得</button>
+    <button id="csvExportBtn">CSV出力</button>
+    <button id="copyAllBtn">一括コピー</button>
   </div>
 
   <div id="count"></div>
@@ -253,11 +292,15 @@ function initState() {
 function normalizeItems(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.map(x => {
-    if (typeof x === "string") return { url: x, memo: "", height: 600 };
+    if (typeof x === "string") return { url: x, memo: "", height: 600, text: "", date: "", userName: "", screenName: "" };
     return {
       url: x.url,
       memo: x.memo || "",
-      height: typeof x.height === "number" ? x.height : 600
+      height: typeof x.height === "number" ? x.height : 600,
+      text: x.text || "",
+      date: x.date || "",
+      userName: x.userName || "",
+      screenName: x.screenName || ""
     };
   });
 }
@@ -333,6 +376,132 @@ function extractTweetId(url) {
   return m ? m[1] : null;
 }
 
+/* ===== ツイートデータ取得 ===== */
+function generateSyndicationToken(tweetId) {
+  return ((Number(tweetId) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
+}
+
+async function fetchTweetData(tweetId) {
+  const token = generateSyndicationToken(tweetId);
+  const url = "https://cdn.syndication.twimg.com/tweet-result?id=" + tweetId + "&lang=ja&token=" + token;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  return {
+    text: data.text || "",
+    date: data.created_at || "",
+    userName: (data.user && data.user.name) || "",
+    screenName: (data.user && data.user.screen_name) || ""
+  };
+}
+
+function formatTweetDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const pad = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "/" + pad(d.getMonth()+1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+async function fetchAllTweetData() {
+  const btn = document.getElementById("fetchAllBtn");
+  const arr = getCurrentItems();
+  let updated = 0;
+  let errors = 0;
+  btn.textContent = "取得中... (0/" + arr.length + ")";
+  btn.disabled = true;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i].text) { continue; }
+    const tid = extractTweetId(arr[i].url);
+    if (!tid) { errors++; continue; }
+    try {
+      const data = await fetchTweetData(tid);
+      arr[i].text = data.text;
+      arr[i].date = data.date;
+      arr[i].userName = data.userName;
+      arr[i].screenName = data.screenName;
+      updated++;
+      btn.textContent = "取得中... (" + (updated + errors) + "/" + arr.length + ")";
+    } catch (e) {
+      console.error("fetchTweetData error:", e);
+      errors++;
+    }
+  }
+  if (updated > 0) {
+    setCurrentItems(arr);
+    renderList();
+  }
+  btn.textContent = "一括テキスト取得";
+  btn.disabled = false;
+  alert(updated + "件取得しました" + (errors > 0 ? "（" + errors + "件エラー）" : ""));
+}
+
+function exportCsv() {
+  const arr = getCurrentItems();
+  const hasData = arr.some(x => x.text);
+  if (!hasData) {
+    alert("テキストデータがありません。先に「一括テキスト取得」を実行してください。");
+    return;
+  }
+  const header = "ユーザー名,スクリーンネーム,日付,URL,テキスト";
+  const rows = arr.map(it => {
+    const cells = [
+      csvEscape(it.userName),
+      csvEscape(it.screenName ? "@" + it.screenName : ""),
+      csvEscape(formatTweetDate(it.date)),
+      csvEscape(it.url),
+      csvEscape(it.text)
+    ];
+    return cells.join(",");
+  });
+  const csv = "\uFEFF" + header + "\n" + rows.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const name = getCurrentTab().name.replace(/[\\\/:*?"<>|]/g, "_");
+  const fname = "x_tab_" + name + "_" + now.getFullYear() + pad(now.getMonth()+1) + pad(now.getDate()) + "_" + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) + ".csv";
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function csvEscape(val) {
+  if (val == null) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function copyAllTweetData() {
+  const arr = getCurrentItems();
+  const hasData = arr.some(x => x.text);
+  if (!hasData) {
+    alert("テキストデータがありません。先に「一括テキスト取得」を実行してください。");
+    return;
+  }
+  const lines = arr.map((it, i) => {
+    const parts = [];
+    parts.push("[" + (i+1) + "]");
+    if (it.userName) parts.push(it.userName + " (@" + it.screenName + ")");
+    if (it.date) parts.push(formatTweetDate(it.date));
+    parts.push(it.url);
+    if (it.text) parts.push(it.text);
+    return parts.join("\n");
+  });
+  const text = lines.join("\n\n---\n\n");
+  navigator.clipboard.writeText(text).then(() => {
+    alert("クリップボードにコピーしました（" + arr.length + "件）");
+  }).catch(() => {
+    alert("コピーに失敗しました");
+  });
+}
+
 function createTweetItem(item, index) {
   const root = document.createElement("div");
   root.className = "tweet-item";
@@ -345,6 +514,34 @@ function createTweetItem(item, index) {
   head.className = "tweet-header";
   head.innerHTML = `<span>#${index + 1}</span>`;
 
+  const headBtns = document.createElement("div");
+  headBtns.style.display = "flex";
+  headBtns.style.gap = "4px";
+
+  const fetchBtn = document.createElement("button");
+  fetchBtn.className = "btn-fetch";
+  fetchBtn.textContent = item.text ? "再取得" : "テキスト取得";
+  fetchBtn.onclick = async () => {
+    const tid = extractTweetId(item.url);
+    if (!tid) { alert("ツイートIDが取得できません"); return; }
+    fetchBtn.textContent = "取得中...";
+    fetchBtn.disabled = true;
+    try {
+      const data = await fetchTweetData(tid);
+      const arr = getCurrentItems();
+      arr[index].text = data.text;
+      arr[index].date = data.date;
+      arr[index].userName = data.userName;
+      arr[index].screenName = data.screenName;
+      setCurrentItems(arr);
+      renderList();
+    } catch (e) {
+      alert("取得エラー: " + e.message);
+      fetchBtn.textContent = item.text ? "再取得" : "テキスト取得";
+      fetchBtn.disabled = false;
+    }
+  };
+
   const del = document.createElement("button");
   del.className = "btn-delete";
   del.textContent = "削除";
@@ -354,7 +551,10 @@ function createTweetItem(item, index) {
     setCurrentItems(arr);
     renderList();
   };
-  head.appendChild(del);
+
+  headBtns.appendChild(fetchBtn);
+  headBtns.appendChild(del);
+  head.appendChild(headBtns);
 
   const urlText = document.createElement("div");
   urlText.className = "tweet-url";
@@ -376,6 +576,28 @@ function createTweetItem(item, index) {
   main.appendChild(head);
   main.appendChild(urlText);
   main.appendChild(embed);
+
+  if (item.text) {
+    const dataDiv = document.createElement("div");
+    dataDiv.className = "tweet-data";
+    if (item.userName) {
+      const userDiv = document.createElement("div");
+      userDiv.className = "tweet-data-user";
+      userDiv.textContent = item.userName + " @" + item.screenName;
+      dataDiv.appendChild(userDiv);
+    }
+    const textDiv = document.createElement("div");
+    textDiv.className = "tweet-data-text";
+    textDiv.textContent = item.text;
+    dataDiv.appendChild(textDiv);
+    if (item.date) {
+      const dateDiv = document.createElement("div");
+      dateDiv.className = "tweet-data-date";
+      dateDiv.textContent = formatTweetDate(item.date);
+      dataDiv.appendChild(dateDiv);
+    }
+    main.appendChild(dataDiv);
+  }
 
   /* 右：メモ */
   const memoBox = document.createElement("div");
@@ -521,7 +743,7 @@ function addItem() {
       skipped++;
       continue;
     }
-    arr.unshift({ url, memo: "", height: 600 });
+    arr.unshift({ url, memo: "", height: 600, text: "", date: "", userName: "", screenName: "" });
     added++;
   }
 
@@ -611,6 +833,9 @@ window.onload = () => {
   document.getElementById("importBtn").onclick =
     () => document.getElementById("importFile").click();
   document.getElementById("importFile").addEventListener("change", handleImportFile);
+  document.getElementById("fetchAllBtn").onclick = fetchAllTweetData;
+  document.getElementById("csvExportBtn").onclick = exportCsv;
+  document.getElementById("copyAllBtn").onclick = copyAllTweetData;
 
   document.addEventListener("keydown", handleTabShortcut);
 
