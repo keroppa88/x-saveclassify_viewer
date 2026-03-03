@@ -377,21 +377,24 @@ function extractTweetId(url) {
 }
 
 /* ===== ツイートデータ取得 ===== */
-function generateSyndicationToken(tweetId) {
-  return ((Number(tweetId) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
-}
-
 async function fetchTweetData(tweetId) {
-  const token = generateSyndicationToken(tweetId);
-  const url = "https://cdn.syndication.twimg.com/tweet-result?id=" + tweetId + "&lang=ja&token=" + token;
+  const url = "https://api.fxtwitter.com/i/status/" + tweetId;
   const res = await fetch(url);
   if (!res.ok) throw new Error("HTTP " + res.status);
   const data = await res.json();
+  if (!data.tweet) throw new Error("ツイートが見つかりません");
+  const tweet = data.tweet;
+  let dateStr = "";
+  if (tweet.created_timestamp) {
+    dateStr = new Date(tweet.created_timestamp * 1000).toISOString();
+  } else if (tweet.created_at) {
+    dateStr = tweet.created_at;
+  }
   return {
-    text: data.text || "",
-    date: data.created_at || "",
-    userName: (data.user && data.user.name) || "",
-    screenName: (data.user && data.user.screen_name) || ""
+    text: tweet.text || "",
+    date: dateStr,
+    userName: (tweet.author && tweet.author.name) || "",
+    screenName: (tweet.author && tweet.author.screen_name) || ""
   };
 }
 
