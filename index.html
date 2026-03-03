@@ -176,6 +176,29 @@
       color: #888;
       margin-top: 4px;
     }
+    .tweet-data-likes {
+      font-size: 11px;
+      color: #e0245e;
+      margin-top: 2px;
+    }
+    .tweet-data-quote {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: #f5f5f5;
+      border-left: 3px solid #ccc;
+      border-radius: 2px;
+      font-size: 11px;
+    }
+    .tweet-data-quote-user {
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 2px;
+    }
+    .tweet-data-quote-text {
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #444;
+    }
     .btn-fetch {
       background: #e8f0fe;
       border: 1px solid #c0d0e0;
@@ -292,7 +315,7 @@ function initState() {
 function normalizeItems(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.map(x => {
-    if (typeof x === "string") return { url: x, memo: "", height: 600, text: "", date: "", userName: "", screenName: "" };
+    if (typeof x === "string") return { url: x, memo: "", height: 600, text: "", date: "", userName: "", screenName: "", likes: 0, quoteText: "", quoteUserName: "", quoteScreenName: "" };
     return {
       url: x.url,
       memo: x.memo || "",
@@ -300,7 +323,11 @@ function normalizeItems(arr) {
       text: x.text || "",
       date: x.date || "",
       userName: x.userName || "",
-      screenName: x.screenName || ""
+      screenName: x.screenName || "",
+      likes: x.likes || 0,
+      quoteText: x.quoteText || "",
+      quoteUserName: x.quoteUserName || "",
+      quoteScreenName: x.quoteScreenName || ""
     };
   });
 }
@@ -390,11 +417,25 @@ async function fetchTweetData(tweetId) {
   } else if (tweet.created_at) {
     dateStr = tweet.created_at;
   }
+  let quoteText = "";
+  let quoteUserName = "";
+  let quoteScreenName = "";
+  if (tweet.quote) {
+    quoteText = tweet.quote.text || "";
+    if (tweet.quote.author) {
+      quoteUserName = tweet.quote.author.name || "";
+      quoteScreenName = tweet.quote.author.screen_name || "";
+    }
+  }
   return {
     text: tweet.text || "",
     date: dateStr,
     userName: (tweet.author && tweet.author.name) || "",
-    screenName: (tweet.author && tweet.author.screen_name) || ""
+    screenName: (tweet.author && tweet.author.screen_name) || "",
+    likes: tweet.likes || 0,
+    quoteText: quoteText,
+    quoteUserName: quoteUserName,
+    quoteScreenName: quoteScreenName
   };
 }
 
@@ -423,6 +464,10 @@ async function fetchAllTweetData() {
       arr[i].date = data.date;
       arr[i].userName = data.userName;
       arr[i].screenName = data.screenName;
+      arr[i].likes = data.likes;
+      arr[i].quoteText = data.quoteText;
+      arr[i].quoteUserName = data.quoteUserName;
+      arr[i].quoteScreenName = data.quoteScreenName;
       updated++;
       btn.textContent = "取得中... (" + (updated + errors) + "/" + arr.length + ")";
     } catch (e) {
@@ -446,14 +491,17 @@ function exportCsv() {
     alert("テキストデータがありません。先に「一括テキスト取得」を実行してください。");
     return;
   }
-  const header = "ユーザー名,スクリーンネーム,日付,URL,テキスト";
+  const header = "ユーザー名,スクリーンネーム,日付,URL,テキスト,いいね数,引用元ユーザー,引用元テキスト";
   const rows = arr.map(it => {
     const cells = [
       csvEscape(it.userName),
       csvEscape(it.screenName ? "@" + it.screenName : ""),
       csvEscape(formatTweetDate(it.date)),
       csvEscape(it.url),
-      csvEscape(it.text)
+      csvEscape(it.text),
+      csvEscape(it.likes || 0),
+      csvEscape(it.quoteUserName ? it.quoteUserName + " @" + it.quoteScreenName : ""),
+      csvEscape(it.quoteText)
     ];
     return cells.join(",");
   });
@@ -493,8 +541,12 @@ function copyAllTweetData() {
     parts.push("[" + (i+1) + "]");
     if (it.userName) parts.push(it.userName + " (@" + it.screenName + ")");
     if (it.date) parts.push(formatTweetDate(it.date));
+    if (it.likes) parts.push("♥ " + it.likes.toLocaleString());
     parts.push(it.url);
     if (it.text) parts.push(it.text);
+    if (it.quoteText) {
+      parts.push("  [引用] " + (it.quoteUserName ? it.quoteUserName + " @" + it.quoteScreenName + ": " : "") + it.quoteText);
+    }
     return parts.join("\n");
   });
   const text = lines.join("\n\n---\n\n");
@@ -536,6 +588,10 @@ function createTweetItem(item, index) {
       arr[index].date = data.date;
       arr[index].userName = data.userName;
       arr[index].screenName = data.screenName;
+      arr[index].likes = data.likes;
+      arr[index].quoteText = data.quoteText;
+      arr[index].quoteUserName = data.quoteUserName;
+      arr[index].quoteScreenName = data.quoteScreenName;
       setCurrentItems(arr);
       renderList();
     } catch (e) {
@@ -598,6 +654,27 @@ function createTweetItem(item, index) {
       dateDiv.className = "tweet-data-date";
       dateDiv.textContent = formatTweetDate(item.date);
       dataDiv.appendChild(dateDiv);
+    }
+    if (item.likes) {
+      const likesDiv = document.createElement("div");
+      likesDiv.className = "tweet-data-likes";
+      likesDiv.textContent = "♥ " + item.likes.toLocaleString();
+      dataDiv.appendChild(likesDiv);
+    }
+    if (item.quoteText) {
+      const quoteDiv = document.createElement("div");
+      quoteDiv.className = "tweet-data-quote";
+      if (item.quoteUserName) {
+        const quoteUser = document.createElement("div");
+        quoteUser.className = "tweet-data-quote-user";
+        quoteUser.textContent = item.quoteUserName + " @" + item.quoteScreenName;
+        quoteDiv.appendChild(quoteUser);
+      }
+      const quoteText = document.createElement("div");
+      quoteText.className = "tweet-data-quote-text";
+      quoteText.textContent = item.quoteText;
+      quoteDiv.appendChild(quoteText);
+      dataDiv.appendChild(quoteDiv);
     }
     main.appendChild(dataDiv);
   }
@@ -746,7 +823,7 @@ function addItem() {
       skipped++;
       continue;
     }
-    arr.unshift({ url, memo: "", height: 600, text: "", date: "", userName: "", screenName: "" });
+    arr.unshift({ url, memo: "", height: 600, text: "", date: "", userName: "", screenName: "", likes: 0, quoteText: "", quoteUserName: "", quoteScreenName: "" });
     added++;
   }
 
